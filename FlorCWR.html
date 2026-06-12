@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>FlorCWR · Registro de poblaciones</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1c2620">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
 /* required styles */
 
@@ -799,6 +802,10 @@ textarea{resize:vertical;min-height:54px}
 
 .req{color:var(--clay)}
 .leaflet-draw-toolbar a{background-color:#fff}
+.vtx-lbl{background:transparent;border:0;box-shadow:none;color:#b4541f;font-weight:700;font-size:11px}
+.vtx-lbl::before{display:none}
+.trackrate{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin:2px 0 8px}
+.trackrate select{width:auto;padding:5px 8px;font-size:13px}
 </style>
 </head>
 <body>
@@ -807,6 +814,7 @@ textarea{resize:vertical;min-height:54px}
     <div class="mark"><b>Flor</b>CWR <span>PSC·PSUA</span></div>
     <div class="count" id="recCount">0 registros</div>
   </header>
+  <div id="offlineBadge" style="display:none;font-size:11px;color:var(--sage-d);text-align:center;padding:3px;background:#eef2e9;border-bottom:1px solid var(--line)"></div>
 
   <nav class="tabs">
     <button class="on" data-tab="form">Nueva</button>
@@ -941,13 +949,20 @@ textarea{resize:vertical;min-height:54px}
       <label>Área de ocupación <span class="hint">polígono de la población</span></label>
       <div id="map"></div>
       <div class="maptools">
-        <button class="btn sm ghost" id="btnDraw">✏︎ Dibujar polígono</button>
-        <button class="btn sm clay" id="btnFinish" style="display:none">✓ Cerrar polígono</button>
-        <button class="btn sm ghost" id="btnUndo" style="display:none">↶ Deshacer vértice</button>
+        <button class="btn sm ghost" id="btnDraw">✏︎ Iniciar polígono</button>
+        <button class="btn sm clay" id="btnGpsVtx" style="display:none">📍 Añadir vértice GPS</button>
+        <button class="btn sm ghost" id="btnAutoTrack" style="display:none">⦿ Grabar andando</button>
+        <button class="btn sm ghost" id="btnUndo" style="display:none">↶ Deshacer</button>
+        <button class="btn sm" id="btnFinish" style="display:none">✓ Cerrar polígono</button>
         <button class="btn sm ghost" id="btnClearPoly">Borrar</button>
         <button class="btn sm ghost" id="btnCenterPoint">Centrar en el punto</button>
       </div>
-      <div class="utmline" id="polyInfo">Sin polígono. Dibuja el área de ocupación o deja sólo el punto.</div>
+      <div class="utmline" id="vertexInfo" style="display:none"></div>
+      <div class="trackrate" id="trackRate" style="display:none">Grabar un punto cada
+        <select id="autoEvery"><option value="3">3 s</option><option value="5" selected>5 s</option><option value="10">10 s</option><option value="15">15 s</option><option value="30">30 s</option></select>
+        (sólo en modo «Grabar andando»)
+      </div>
+      <div class="utmline" id="polyInfo">Sin polígono. Inicia un polígono y marca el área de ocupación: tocando el mapa, fijando vértices con el GPS al recorrer el perímetro, o grabando automáticamente mientras caminas.</div>
     </div>
 
     <!-- FOTOS -->
@@ -1194,6 +1209,7 @@ $('#btnGPS').onclick=()=>{
 
 /* ================= FORM MAP (polígono) ================= */
 let fmap,drawnItems,pointMarker,drawing=false,drawPts=[],drawLayer;
+let vertexAcc=[], currentPolyAcc=null, autoTracking=false, autoTimer=null, autoEvery=5;
 /* Garantiza que Leaflet recalcule su tamaño cuando el contenedor pasa de 0 a su
    altura real (causa habitual del "mapa gris" en móvil dentro de pestañas). */
 function watchSize(id,map){
@@ -1228,38 +1244,105 @@ function startDraw(){
   drawing=true; drawPts=[];
   if(drawLayer){fmap.removeLayer(drawLayer)} drawLayer=L.layerGroup().addTo(fmap);
   drawnItems.clearLayers(); currentPoly=null;
-  toast('Toca el mapa para añadir vértices · pulsa «Cerrar» al terminar');
-  syncDrawButtons();
+  toast('Modo dibujo activo · toca el mapa o usa el GPS para añadir vértices');
+  syncDrawButtons(); updateVertexInfo();
 }
-function addVertex(latlng){
+function addVertex(latlng,acc){
   drawPts.push([latlng.lat,latlng.lng]);
-  redrawTemp();
+  if(acc!=null){vertexAcc.push(acc)} else {vertexAcc.push(null)}
+  redrawTemp(); updateVertexInfo(); syncDrawButtons();
 }
 function redrawTemp(){
+  if(!drawLayer)return;
   drawLayer.clearLayers();
-  drawPts.forEach((p,i)=>L.circleMarker(p,{radius:4,color:'#b4541f',fillColor:'#fff',fillOpacity:1,weight:2}).addTo(drawLayer));
+  drawPts.forEach((p,i)=>{
+    L.circleMarker(p,{radius:5,color:'#b4541f',fillColor:'#fff',fillOpacity:1,weight:2}).addTo(drawLayer)
+      .bindTooltip(String(i+1),{permanent:true,direction:'top',className:'vtx-lbl',offset:[0,-6]});
+  });
   if(drawPts.length>1)L.polyline(drawPts,{color:'#b4541f',weight:2,dashArray:'5,4'}).addTo(drawLayer);
+  if(drawPts.length>2)L.polygon(drawPts,{color:'#b4541f',weight:1,fillOpacity:.08,dashArray:'2,6'}).addTo(drawLayer);
+  const last=drawPts[drawPts.length-1];
+  if(last&&drawing)fmap.panTo(last,{animate:true});
+}
+function updateVertexInfo(){
+  const el=$('#vertexInfo'); if(!el)return;
+  if(!drawing){el.style.display='none';return}
+  el.style.display='block';
+  if(!drawPts.length){el.innerHTML='<b>0</b> vértices. Camina el perímetro y ve fijando puntos.';return}
+  let area = drawPts.length>=3 ? polyAreaM2(drawPts) : 0;
+  const accs=vertexAcc.filter(a=>a!=null);
+  const accTxt = accs.length? ` · precisión GPS media ±${Math.round(accs.reduce((a,b)=>a+b,0)/accs.length)} m`:'';
+  el.innerHTML=`<b>${drawPts.length}</b> vértice${drawPts.length===1?'':'s'}`+
+    (area?` · área ≈ <b>${area<10000?area.toFixed(0)+' m²':(area/10000).toFixed(3)+' ha'}</b>`:'')+accTxt+
+    (autoTracking?` · <span style="color:var(--clay)">grabando cada ${autoEvery}s…</span>`:'');
+}
+/* --- captura GPS de un vértice (modo manual) --- */
+function gpsVertex(){
+  if(!drawing)startDraw();
+  if(!navigator.geolocation){toast('GPS no disponible en este contexto (requiere HTTPS)');return}
+  toast('Tomando posición…');
+  navigator.geolocation.getCurrentPosition(p=>{
+    addVertex({lat:p.coords.latitude,lng:p.coords.longitude},p.coords.accuracy);
+    if(fmap.getZoom()<16)fmap.setView([p.coords.latitude,p.coords.longitude],17);
+    toast(`Vértice ${drawPts.length} fijado (±${Math.round(p.coords.accuracy)} m)`);
+  },err=>toast('No se pudo obtener el GPS'+(err.code===1?' (permiso denegado)':'')),
+  {enableHighAccuracy:true,timeout:12000,maximumAge:0});
+}
+/* --- captura GPS automática (tracklog) --- */
+function toggleAutoTrack(){
+  if(autoTracking){stopAutoTrack();return}
+  if(!navigator.geolocation){toast('GPS no disponible en este contexto (requiere HTTPS)');return}
+  if(!drawing)startDraw();
+  const sel=$('#autoEvery'); autoEvery=sel?parseInt(sel.value):5;
+  autoTracking=true; syncDrawButtons(); updateVertexInfo();
+  toast(`Grabación automática: un punto cada ${autoEvery}s. Camina el perímetro.`);
+  const tick=()=>{
+    navigator.geolocation.getCurrentPosition(p=>{
+      // descartar si apenas te has movido (<2 m) para no acumular puntos redundantes
+      const last=drawPts[drawPts.length-1];
+      if(last){const d=haversine(last[0],last[1],p.coords.latitude,p.coords.longitude);if(d<2)return}
+      addVertex({lat:p.coords.latitude,lng:p.coords.longitude},p.coords.accuracy);
+    },()=>{},{enableHighAccuracy:true,timeout:autoEvery*1000,maximumAge:0});
+  };
+  tick();
+  autoTimer=setInterval(tick,autoEvery*1000);
+}
+function stopAutoTrack(){
+  autoTracking=false; if(autoTimer){clearInterval(autoTimer);autoTimer=null}
+  syncDrawButtons(); updateVertexInfo(); toast('Grabación automática detenida');
+}
+function haversine(la1,lo1,la2,lo2){
+  const R=6371000,r=Math.PI/180;
+  const dLa=(la2-la1)*r,dLo=(lo2-lo1)*r;
+  const a=Math.sin(dLa/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dLo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
 }
 function finishDraw(){
   if(!drawing)return;
+  if(autoTracking)stopAutoTrack();
   if(drawPts.length<3){toast('Necesitas al menos 3 vértices');return}
   drawing=false;
-  currentPoly=drawPts.slice();
+  currentPoly=drawPts.slice(); currentPolyAcc=vertexAcc.slice();
   if(drawLayer){fmap.removeLayer(drawLayer);drawLayer=null}
   drawnItems.clearLayers();
   L.polygon(currentPoly,{color:'#b4541f',weight:2,fillOpacity:.15}).addTo(drawnItems);
-  polyInfo(); syncDrawButtons();
+  fmap.fitBounds(L.polygon(currentPoly).getBounds().pad(0.3));
+  polyInfo(); syncDrawButtons(); updateVertexInfo();
 }
 function cancelDraw(){
-  drawing=false; drawPts=[];
+  if(autoTracking)stopAutoTrack();
+  drawing=false; drawPts=[]; vertexAcc=[];
   if(drawLayer){fmap.removeLayer(drawLayer);drawLayer=null}
-  syncDrawButtons();
+  syncDrawButtons(); updateVertexInfo();
 }
-function undoVertex(){ if(drawing&&drawPts.length){drawPts.pop();redrawTemp()} }
+function undoVertex(){ if(drawPts.length){drawPts.pop();vertexAcc.pop();redrawTemp();updateVertexInfo();syncDrawButtons()} }
 function syncDrawButtons(){
-  const d=$('#btnDraw'),f=$('#btnFinish'),u=$('#btnUndo');
-  if(drawing){d.style.display='none';f.style.display='';u.style.display=''}
-  else{d.style.display='';f.style.display='none';u.style.display='none'}
+  const ids={btnDraw:!drawing,btnGpsVtx:drawing,btnAutoTrack:drawing,
+             btnFinish:drawing,btnUndo:drawing&&drawPts.length>0};
+  for(const id in ids){const el=$('#'+id);if(el)el.style.display=ids[id]?'':'none'}
+  const at=$('#btnAutoTrack');
+  if(at)at.textContent=autoTracking?'⏹ Parar grabación':'⦿ Grabar andando';
+  const tr=$('#trackRate');if(tr)tr.style.display=drawing?'flex':'none';
 }
 function placePointMarker(){
   const la=parseFloat(latIn.value),lo=parseFloat(lonIn.value);
@@ -1280,9 +1363,11 @@ function polyAreaM2(ring){ // shoelace en UTM
   return Math.abs(s/2);
 }
 $('#btnDraw').onclick=startDraw;
+$('#btnGpsVtx').onclick=gpsVertex;
+$('#btnAutoTrack').onclick=toggleAutoTrack;
 $('#btnFinish').onclick=finishDraw;
 $('#btnUndo').onclick=undoVertex;
-$('#btnClearPoly').onclick=()=>{cancelDraw();if(drawnItems)drawnItems.clearLayers();currentPoly=null;polyInfo()};
+$('#btnClearPoly').onclick=()=>{cancelDraw();if(drawnItems)drawnItems.clearLayers();currentPoly=null;currentPolyAcc=null;polyInfo()};
 $('#btnCenterPoint').onclick=()=>{const la=parseFloat(latIn.value),lo=parseFloat(lonIn.value);if(isNaN(la)){toast('Introduce primero las coordenadas');return}initFormMap();fmap.setView([la,lo],16);placePointMarker()};
 
 /* ================= PHOTOS ================= */
@@ -1326,7 +1411,7 @@ $('#btnSave').onclick=()=>{
     cobertura:$('#f_cobertura').value, fenologia:$('#f_fenologia').value,
     habitat:$('#f_habitat').value.trim(), sustrato:$('#f_sustrato').value,
     pliego:$('#f_pliego').value.trim(), observador:obs, notas:$('#f_notas').value.trim(),
-    poligono:currentPoly, fotos:photos.slice(),
+    poligono:currentPoly, poligono_acc:currentPolyAcc, fotos:photos.slice(),
     creado: editId? (records.find(r=>r.id===editId)||{}).creado||Date.now() : Date.now()
   };
   if(editId){const i=records.findIndex(r=>r.id===editId);records[i]=rec;toast('Registro actualizado')}
@@ -1337,7 +1422,8 @@ function resetForm(){
   ['f_especie','f_lat','f_lon','f_localidad','f_abundancia','f_pliego','f_notas','f_habitat'].forEach(id=>$('#'+id).value='');
   ['f_certidumbre','f_unidad','f_cobertura','f_fenologia','f_sustrato'].forEach(id=>$('#'+id).value='');
   $('#f_fecha').value=new Date().toISOString().slice(0,10);
-  $('#f_editid').value=''; photos=[];currentPoly=null;renderPhotos();
+  $('#f_editid').value=''; photos=[];currentPoly=null;currentPolyAcc=null;vertexAcc=[];renderPhotos();
+  if(drawing)cancelDraw();
   if(drawnItems)drawnItems.clearLayers(); $('#utmPoint').innerHTML='UTM ETRS89: —'; polyInfo();
   const ti=$('#taxInfo');if(ti)ti.style.display='none';
 }
@@ -1384,7 +1470,7 @@ function editRec(id){
   $('#f_fenologia').value=r.fenologia||'';$('#f_habitat').value=r.habitat||'';
   $('#f_sustrato').value=r.sustrato||'';$('#f_pliego').value=r.pliego||'';
   $('#f_notas').value=r.notas||'';$('#f_editid').value=r.id;
-  photos=(r.fotos||[]).slice();renderPhotos();currentPoly=r.poligono||null;
+  photos=(r.fotos||[]).slice();renderPhotos();currentPoly=r.poligono||null;currentPolyAcc=r.poligono_acc||null;
   updateUTM();catInfo();
   document.querySelector('nav.tabs button[data-tab="form"]').click();
   initFormMap();
@@ -1563,6 +1649,25 @@ $('#btnWipe').onclick=()=>{if(confirm('¿Borrar TODOS los registros? Esta acció
 $('#f_fecha').value=new Date().toISOString().slice(0,10);
 refreshTaxStat();updateTaxNote();renderCount();renderList();
 setTimeout(()=>{initFormMap();[120,400,900].forEach(t=>setTimeout(()=>fmap&&fmap.invalidateSize(),t));},300);
+
+/* ===== PWA: registro del service worker ===== */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      // indicador discreto de disponibilidad offline
+      const ready=()=>{const el=$('#offlineBadge');if(el){el.style.display='inline';el.textContent='✓ disponible sin conexión'}};
+      if(reg.active)ready();
+      reg.addEventListener('updatefound',()=>{const nw=reg.installing;nw&&nw.addEventListener('statechange',()=>{if(nw.state==='activated')ready()})});
+    }).catch(()=>{/* si falla (p.ej. file://), la app sigue funcionando online */});
+  });
+}
+/* aviso de estado de conexión para el mapa */
+function netStatus(){
+  const b=$('#offlineBadge');if(!b)return;
+  if(!navigator.onLine){b.style.display='inline';b.textContent='● sin conexión · mapa cacheado';b.style.color='var(--warn)';}
+}
+window.addEventListener('online',()=>{const b=$('#offlineBadge');if(b)b.style.color='';});
+window.addEventListener('offline',netStatus);
 
 </script>
 </body>
