@@ -868,6 +868,33 @@ textarea{resize:vertical;min-height:54px}
       <input id="f_localidad" placeholder="Topónimo, paraje, municipio…">
     </div>
 
+    <!-- MÉTODO DE ESTIMACIÓN -->
+    <div class="field">
+      <label>Estimación del tamaño poblacional</label>
+      <select id="f_metodo">
+        <option value="">—</option>
+        <option>Censo total</option>
+        <option>Transecto</option>
+        <option>Frecuencia</option>
+      </select>
+    </div>
+
+    <!-- SECCIÓN TRANSECTO (oculta por defecto) -->
+    <div class="field" id="transectoBlock" style="display:none">
+      <label>Datos del transecto <span class="hint">la abundancia se calcula con el área del polígono</span></label>
+      <div class="row">
+        <div class="field">
+          <label>Tamaño del transecto <span class="hint">m²</span></label>
+          <input id="f_transArea" inputmode="decimal" placeholder="ej. 50">
+        </div>
+        <div class="field">
+          <label>Nº individuos en transecto</label>
+          <input id="f_transN" inputmode="numeric" placeholder="ej. 18">
+        </div>
+      </div>
+      <div class="utmline" id="transInfo">Introduce el tamaño del transecto y el nº de individuos. Necesitas un polígono de área de ocupación cerrado.</div>
+    </div>
+
     <!-- ABUNDANCIA -->
     <div class="row">
       <div class="field">
@@ -1334,6 +1361,7 @@ function finishDraw(){
   fmap.fitBounds(L.polygon(currentPoly).getBounds().pad(0.3));
   polyInfo(); syncDrawButtons(); updateVertexInfo();
   if(gridM)buildGrid();
+  if($('#f_metodo').value==='Transecto')calcTransecto();
 }
 function cancelDraw(){
   if(autoTracking)stopAutoTrack();
@@ -1413,6 +1441,9 @@ $('#btnSave').onclick=()=>{
     especie:esp, familia:cat.f||'', cultivo:cat.c||'', psc:!!cat.psc, psua:!!cat.psua, uicn:cat.u||'',
     certidumbre:$('#f_certidumbre').value, fecha:$('#f_fecha').value,
     lat,lon, utm:toUTM(lat,lon), localidad:$('#f_localidad').value.trim(),
+    metodo:$('#f_metodo').value,
+    transecto_area_m2:$('#f_metodo').value==='Transecto'?(parseFloat($('#f_transArea').value)||null):null,
+    transecto_n:$('#f_metodo').value==='Transecto'?(parseFloat($('#f_transN').value)||null):null,
     unidad:$('#f_unidad').value, abundancia:$('#f_abundancia').value,
     cobertura:$('#f_cobertura').value, fenologia:$('#f_fenologia').value,
     habitat:$('#f_habitat').value.trim(), sustrato:$('#f_sustrato').value,
@@ -1431,8 +1462,10 @@ $('#btnSave').onclick=()=>{
   saveAll();resetForm();renderCount();
 };
 function resetForm(){
-  ['f_especie','f_lat','f_lon','f_localidad','f_abundancia','f_pliego','f_notas','f_habitat'].forEach(id=>$('#'+id).value='');
-  ['f_certidumbre','f_unidad','f_cobertura','f_fenologia','f_sustrato'].forEach(id=>$('#'+id).value='');
+  ['f_especie','f_lat','f_lon','f_localidad','f_abundancia','f_pliego','f_notas','f_habitat','f_transArea','f_transN'].forEach(id=>$('#'+id).value='');
+  ['f_certidumbre','f_unidad','f_cobertura','f_fenologia','f_sustrato','f_metodo'].forEach(id=>$('#'+id).value='');
+  $('#f_unidad').disabled=false; $('#f_abundancia').readOnly=false; $('#f_abundancia').style.background='';
+  $('#transectoBlock').style.display='none';
   $('#f_fecha').value=new Date().toISOString().slice(0,10);
   $('#f_editid').value=''; photos=[];currentPoly=null;currentPolyAcc=null;vertexAcc=[];renderPhotos();
   if(drawing)cancelDraw();
@@ -1448,6 +1481,54 @@ function resetForm(){
 }
 $('#btnReset').onclick=()=>{resetForm();toast('Formulario limpio')};
 $('#f_unidad').addEventListener('change',()=>{ maybeCopyFreq(); if($('#f_unidad').value==='Frecuencia (%)'&&gridCells.length)updateFreq(); });
+
+/* ===== MÉTODO DE ESTIMACIÓN DEL TAMAÑO POBLACIONAL ===== */
+function applyMethod(){
+  const m=$('#f_metodo').value;
+  const transBlock=$('#transectoBlock'), gridBlock=$('#gridBlock');
+  const unidad=$('#f_unidad'), abund=$('#f_abundancia');
+  // por defecto, todo editable y secciones ocultas
+  transBlock.style.display='none';
+  gridBlock.style.display='';            // la malla puede usarse siempre como herramienta, pero…
+  unidad.disabled=false; abund.readOnly=false;
+  abund.style.background='';
+
+  if(m==='Transecto'){
+    transBlock.style.display='';
+    gridBlock.style.display='none';      // ocultar frecuencia en modo transecto
+    unidad.value='Individuo'; unidad.disabled=true;
+    abund.readOnly=true; abund.style.background='#eef2e9';
+    calcTransecto();
+  } else if(m==='Frecuencia'){
+    gridBlock.style.display='';
+    unidad.value='Frecuencia (%)'; unidad.disabled=true;
+    abund.readOnly=true; abund.style.background='#eef2e9';
+    maybeCopyFreq(); if(gridCells.length)updateFreq();
+  } else if(m==='Censo total'){
+    gridBlock.style.display='none';      // censo: valor directo, sin malla ni transecto
+    abund.readOnly=false; abund.style.background='';
+    // unidad libre; no forzamos nada
+  } else {
+    // sin método elegido: dejar la malla disponible como antes
+    gridBlock.style.display='';
+  }
+}
+$('#f_metodo').addEventListener('change',applyMethod);
+
+/* cálculo por transecto: abundancia = n · areaPoligono / areaTransecto */
+function calcTransecto(){
+  const info=$('#transInfo');
+  const tA=parseFloat($('#f_transArea').value), tN=parseFloat($('#f_transN').value);
+  if(!currentPoly||currentPoly.length<3){ info.innerHTML='⚠ Falta el polígono de área de ocupación. Ciérralo para poder calcular.'; return; }
+  const areaPoly=polyAreaM2(currentPoly);
+  if(isNaN(tA)||tA<=0||isNaN(tN)||tN<0){ info.innerHTML=`Área de ocupación = <b>${fmtArea(areaPoly)}</b>. Introduce tamaño del transecto (m²) y nº de individuos.`; return; }
+  const ab=tN*areaPoly/tA;
+  $('#f_abundancia').value=Math.round(ab);
+  info.innerHTML=`Área de ocupación <b>${areaPoly.toFixed(0)} m²</b> · densidad <b>${(tN/tA).toFixed(3)}</b> ind/m² · `+
+    `abundancia estimada = <b>${Math.round(ab).toLocaleString('es')}</b> individuos`;
+}
+$('#f_transArea').addEventListener('input',calcTransecto);
+$('#f_transN').addEventListener('input',calcTransecto);
 
 /* ================= LIST ================= */
 $('#searchRec').addEventListener('input',renderList);
@@ -1491,6 +1572,9 @@ function editRec(id){
   $('#f_fenologia').value=r.fenologia||'';$('#f_habitat').value=r.habitat||'';
   $('#f_sustrato').value=r.sustrato||'';$('#f_pliego').value=r.pliego||'';
   $('#f_notas').value=r.notas||'';$('#f_editid').value=r.id;
+  $('#f_metodo').value=r.metodo||'';
+  $('#f_transArea').value=r.transecto_area_m2!=null?r.transecto_area_m2:'';
+  $('#f_transN').value=r.transecto_n!=null?r.transecto_n:'';
   photos=(r.fotos||[]).slice();renderPhotos();currentPoly=r.poligono||null;currentPolyAcc=r.poligono_acc||null;
   updateUTM();catInfo();
   document.querySelector('nav.tabs button[data-tab="form"]').click();
@@ -1509,6 +1593,9 @@ function editRec(id){
     const g0=document.querySelector('#gridCfg button[data-m="0"]'); if(g0)g0.classList.add('on');
     freqInfo('Cierra un polígono y elige un tamaño de malla para calcular la frecuencia de cuadrículas con presencia.');{const w=document.getElementById('gridAccWarn');if(w)w.style.display='none';}
   }
+  applyMethod();                       // aplica visibilidad y forzado según el método guardado
+  $('#f_unidad').value=r.unidad||$('#f_unidad').value;
+  $('#f_abundancia').value=r.abundancia||'';
   polyInfo();window.scrollTo(0,0);toast('Editando registro');
 }
 
@@ -1685,16 +1772,17 @@ $('#btnGeo').onclick=()=>{
 function geoProps(r){const u=r.utm||toUTM(r.lat,r.lon);return{
   especie:r.especie,familia:r.familia||'',cultivo_ref:r.cultivo||'',psc:!!r.psc,psua:!!r.psua,uicn:r.uicn||'',
   certidumbre:r.certidumbre,fecha:r.fecha,localidad:r.localidad,
+  metodo_estimacion:r.metodo||'',transecto_area_m2:r.transecto_area_m2||'',transecto_n:r.transecto_n||'',
   unidad:r.unidad,abundancia:r.abundancia,cobertura:r.cobertura,fenologia:r.fenologia,
   habitat_eunis:r.habitat,sustrato:r.sustrato,pliego:r.pliego,observador:r.observador,
   notas:r.notas,utm_huso:u.zone,utm_x:+u.x.toFixed(1),utm_y:+u.y.toFixed(1),epsg:'258'+u.zone,
   malla_m:r.malla_m||'',cuadriculas_totales:r.cuadriculas_totales||'',cuadriculas_presencia:r.cuadriculas_presencia||'',frecuencia_ocupacion_pct:(r.frecuencia_ocupacion!=null?r.frecuencia_ocupacion:''),
   n_fotos:(r.fotos||[]).length};}
 $('#btnCsv').onclick=()=>{
-  const cols=['especie','familia','cultivo_ref','psc','psua','uicn','certidumbre','fecha','lat','lon','utm_huso','utm_x','utm_y','localidad','unidad','abundancia','cobertura','fenologia','habitat','sustrato','pliego','observador','notas','n_vertices_poligono','area_m2','malla_m','cuadriculas_totales','cuadriculas_presencia','frecuencia_ocupacion_pct'];
+  const cols=['especie','familia','cultivo_ref','psc','psua','uicn','certidumbre','fecha','lat','lon','utm_huso','utm_x','utm_y','localidad','metodo_estimacion','transecto_area_m2','transecto_n','unidad','abundancia','cobertura','fenologia','habitat','sustrato','pliego','observador','notas','n_vertices_poligono','area_m2','malla_m','cuadriculas_totales','cuadriculas_presencia','frecuencia_ocupacion_pct'];
   const rows=[cols.join(',')];
   records.forEach(r=>{const u=r.utm||toUTM(r.lat,r.lon);const a=r.poligono?polyAreaM2(r.poligono):'';
-    const vals=[r.especie,r.familia||'',r.cultivo||'',r.psc?'sí':'',r.psua?'sí':'',r.uicn||'',r.certidumbre,r.fecha,r.lat,r.lon,u.zone,u.x.toFixed(1),u.y.toFixed(1),r.localidad,r.unidad,r.abundancia,r.cobertura,r.fenologia,r.habitat,r.sustrato,r.pliego,r.observador,r.notas,r.poligono?r.poligono.length:'',a===''?'':a.toFixed(0),r.malla_m||'',r.cuadriculas_totales||'',r.cuadriculas_presencia||'',(r.frecuencia_ocupacion!=null?r.frecuencia_ocupacion:'')];
+    const vals=[r.especie,r.familia||'',r.cultivo||'',r.psc?'sí':'',r.psua?'sí':'',r.uicn||'',r.certidumbre,r.fecha,r.lat,r.lon,u.zone,u.x.toFixed(1),u.y.toFixed(1),r.localidad,r.metodo||'',r.transecto_area_m2||'',r.transecto_n||'',r.unidad,r.abundancia,r.cobertura,r.fenologia,r.habitat,r.sustrato,r.pliego,r.observador,r.notas,r.poligono?r.poligono.length:'',a===''?'':a.toFixed(0),r.malla_m||'',r.cuadriculas_totales||'',r.cuadriculas_presencia||'',(r.frecuencia_ocupacion!=null?r.frecuencia_ocupacion:'')];
     rows.push(vals.map(v=>{v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(','));
   });
   dl('florcwr.csv','\ufeff'+rows.join('\n'),'text/csv');toast('CSV exportado');
