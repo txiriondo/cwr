@@ -815,6 +815,10 @@ textarea{resize:vertical;min-height:54px}
     <div class="count" id="recCount">0 registros</div>
   </header>
   <div id="offlineBadge" style="display:none;font-size:11px;color:var(--sage-d);text-align:center;padding:3px;background:#eef2e9;border-bottom:1px solid var(--line)"></div>
+  <div id="updateBar" style="display:none;align-items:center;gap:10px;justify-content:center;font-size:13px;color:#fff;background:var(--clay);padding:8px 12px">
+    <span>Hay una versión nueva de FlorCWR</span>
+    <button id="updateBtn" class="btn sm" style="background:#fff;color:var(--clay);border-color:#fff;padding:5px 12px">Actualizar</button>
+  </div>
 
   <nav class="tabs">
     <button class="on" data-tab="form">Nueva</button>
@@ -1740,16 +1744,44 @@ $('#f_fecha').value=new Date().toISOString().slice(0,10);
 refreshTaxStat();updateTaxNote();renderCount();renderList();
 setTimeout(()=>{initFormMap();[120,400,900].forEach(t=>setTimeout(()=>fmap&&fmap.invalidateSize(),t));},300);
 
-/* ===== PWA: registro del service worker ===== */
+/* ===== PWA: registro del service worker con detección de actualización ===== */
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('sw.js').then(reg=>{
-      // indicador discreto de disponibilidad offline
       const ready=()=>{const el=$('#offlineBadge');if(el){el.style.display='inline';el.textContent='✓ disponible sin conexión'}};
       if(reg.active)ready();
-      reg.addEventListener('updatefound',()=>{const nw=reg.installing;nw&&nw.addEventListener('statechange',()=>{if(nw.state==='activated')ready()})});
+      // ¿ya hay una versión nueva esperando al cargar?
+      if(reg.waiting && navigator.serviceWorker.controller) showUpdateBar(reg);
+      // detectar nuevas versiones que lleguen mientras la app está abierta
+      reg.addEventListener('updatefound',()=>{
+        const nw=reg.installing; if(!nw)return;
+        nw.addEventListener('statechange',()=>{
+          if(nw.state==='installed'){
+            if(navigator.serviceWorker.controller) showUpdateBar(reg); // hay versión previa => es una actualización
+            else ready();                                              // primera instalación
+          }
+        });
+      });
+      // comprobar actualizaciones al volver a la app y periódicamente
+      const check=()=>reg.update().catch(()=>{});
+      document.addEventListener('visibilitychange',()=>{if(!document.hidden)check();});
+      setInterval(check, 60*60*1000); // cada hora si queda abierta
     }).catch(()=>{/* si falla (p.ej. file://), la app sigue funcionando online */});
+
+    // cuando el SW nuevo toma control, recargar una sola vez
+    let reloaded=false;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{
+      if(reloaded)return; reloaded=true; window.location.reload();
+    });
   });
+}
+function showUpdateBar(reg){
+  const bar=$('#updateBar'); if(!bar)return;
+  bar.style.display='flex';
+  $('#updateBtn').onclick=()=>{
+    bar.style.display='none';
+    if(reg.waiting) reg.waiting.postMessage('skipWaiting');
+  };
 }
 /* aviso de estado de conexión para el mapa */
 function netStatus(){
