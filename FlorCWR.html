@@ -756,7 +756,7 @@ textarea{resize:vertical;min-height:54px}
 .btn.sm{padding:7px 10px;font-size:13px}
 .btn[disabled]{opacity:.45;pointer-events:none}
 
-#map,#gridmap{height:300px;border-radius:9px;border:1px solid var(--line);z-index:1}
+#map{height:300px;border-radius:9px;border:1px solid var(--line);z-index:1}
 .maptools{display:flex;flex-wrap:wrap;gap:7px;margin:9px 0}
 .utmline{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:6px;
   background:#efece2;border:1px solid var(--line);border-radius:6px;padding:7px 9px;line-height:1.6}
@@ -819,7 +819,6 @@ textarea{resize:vertical;min-height:54px}
   <nav class="tabs">
     <button class="on" data-tab="form">Nueva</button>
     <button data-tab="list">Registros</button>
-    <button data-tab="grid">Mapas/Grid</button>
     <button data-tab="data">Datos</button>
   </nav>
 
@@ -872,11 +871,9 @@ textarea{resize:vertical;min-height:54px}
         <select id="f_unidad">
           <option value="">—</option>
           <option>Individuo</option>
-          <option>Rameto</option>
-          <option>Mata / macolla</option>
           <option>Rodal</option>
-          <option>Tallo florido</option>
           <option>Cobertura (m²)</option>
+          <option>Frecuencia (%)</option>
         </select>
       </div>
       <div class="field">
@@ -965,6 +962,26 @@ textarea{resize:vertical;min-height:54px}
       <div class="utmline" id="polyInfo">Sin polígono. Inicia un polígono y marca el área de ocupación: tocando el mapa, fijando vértices con el GPS al recorrer el perímetro, o grabando automáticamente mientras caminas.</div>
     </div>
 
+    <!-- CUADRÍCULA Y FRECUENCIA DE OCUPACIÓN -->
+    <div class="field" id="gridBlock">
+      <label>Frecuencia de ocupación <span class="hint">cuadrícula UTM ETRS89 sobre el área</span></label>
+      <div class="gridcfg" id="gridCfg">
+        <button data-m="0" class="on">Sin malla</button>
+        <button data-m="5">5 m</button>
+        <button data-m="10">10 m</button>
+        <button data-m="25">25 m</button>
+        <button data-m="50">50 m</button>
+        <button data-m="100">100 m</button>
+        <button data-m="1000">1 km</button>
+      </div>
+      <div class="maptools">
+        <button class="btn sm clay" id="btnGridPresence" disabled>✓ Marcar presencia (GPS)</button>
+        <button class="btn sm ghost" id="btnGridClear" disabled>Limpiar presencias</button>
+      </div>
+      <div class="utmline" id="freqInfo">Cierra un polígono y elige un tamaño de malla para calcular la frecuencia de cuadrículas con presencia.</div>
+      <div class="note warn" id="gridAccWarn" style="display:none;margin-top:8px"></div>
+    </div>
+
     <!-- FOTOS -->
     <div class="field">
       <label>Fotos</label>
@@ -993,21 +1010,6 @@ textarea{resize:vertical;min-height:54px}
   </section>
 
   <!-- ===== GRID ===== -->
-  <section class="pane" id="pane-grid">
-    <h2 style="margin:0 0 4px">Mapa con cuadrícula</h2>
-    <p class="note">Rejilla UTM ETRS89 (huso 30N por defecto). Cada celda muestra cuántas poblaciones registradas contiene.</p>
-    <div class="gridcfg" id="gridCfg">
-      <button data-m="5">5 m</button>
-      <button data-m="10">10 m</button>
-      <button data-m="25">25 m</button>
-      <button data-m="50">50 m</button>
-      <button data-m="100" class="on">100 m</button>
-      <button data-m="1000">1 km</button>
-    </div>
-    <div id="gridmap"></div>
-    <div class="utmline" id="gridInfo">—</div>
-  </section>
-
   <!-- ===== DATA ===== -->
   <section class="pane" id="pane-data">
     <h2 style="margin:0 0 10px">Exportar e importar</h2>
@@ -1124,7 +1126,6 @@ document.querySelectorAll('nav.tabs button').forEach(b=>{
     document.querySelectorAll('.pane').forEach(x=>x.classList.remove('on'));
     b.classList.add('on'); $('#pane-'+b.dataset.tab).classList.add('on');
     if(b.dataset.tab==='form') setTimeout(()=>fmap&&fmap.invalidateSize(),60);
-    if(b.dataset.tab==='grid') initGrid();
     if(b.dataset.tab==='list') renderList();
   };
 });
@@ -1237,7 +1238,7 @@ function initFormMap(){
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(fmap);
   watchSize('map',fmap);
   drawnItems=new L.FeatureGroup().addTo(fmap);
-  fmap.on('click',e=>{ if(drawing) addVertex(e.latlng); });
+  fmap.on('click',e=>{ if(drawing) addVertex(e.latlng); else if(gridM&&gridCells.length) gridMapClick(e.latlng); });
 }
 function startDraw(){
   initFormMap(); if(!fmap)return;
@@ -1328,6 +1329,7 @@ function finishDraw(){
   L.polygon(currentPoly,{color:'#b4541f',weight:2,fillOpacity:.15}).addTo(drawnItems);
   fmap.fitBounds(L.polygon(currentPoly).getBounds().pad(0.3));
   polyInfo(); syncDrawButtons(); updateVertexInfo();
+  if(gridM)buildGrid();
 }
 function cancelDraw(){
   if(autoTracking)stopAutoTrack();
@@ -1367,7 +1369,7 @@ $('#btnGpsVtx').onclick=gpsVertex;
 $('#btnAutoTrack').onclick=toggleAutoTrack;
 $('#btnFinish').onclick=finishDraw;
 $('#btnUndo').onclick=undoVertex;
-$('#btnClearPoly').onclick=()=>{cancelDraw();if(drawnItems)drawnItems.clearLayers();currentPoly=null;currentPolyAcc=null;polyInfo()};
+$('#btnClearPoly').onclick=()=>{cancelDraw();if(drawnItems)drawnItems.clearLayers();currentPoly=null;currentPolyAcc=null;polyInfo();presenceKeys.clear();if(gridLayer){fmap.removeLayer(gridLayer);gridLayer=null}gridCells=[];$('#btnGridPresence').disabled=true;$('#btnGridClear').disabled=true;freqInfo('Cierra un polígono y elige un tamaño de malla para calcular la frecuencia de cuadrículas con presencia.');{const w=document.getElementById('gridAccWarn');if(w)w.style.display='none';}};
 $('#btnCenterPoint').onclick=()=>{const la=parseFloat(latIn.value),lo=parseFloat(lonIn.value);if(isNaN(la)){toast('Introduce primero las coordenadas');return}initFormMap();fmap.setView([la,lo],16);placePointMarker()};
 
 /* ================= PHOTOS ================= */
@@ -1411,7 +1413,13 @@ $('#btnSave').onclick=()=>{
     cobertura:$('#f_cobertura').value, fenologia:$('#f_fenologia').value,
     habitat:$('#f_habitat').value.trim(), sustrato:$('#f_sustrato').value,
     pliego:$('#f_pliego').value.trim(), observador:obs, notas:$('#f_notas').value.trim(),
-    poligono:currentPoly, poligono_acc:currentPolyAcc, fotos:photos.slice(),
+    poligono:currentPoly, poligono_acc:currentPolyAcc,
+    malla_m:gridM||null,
+    cuadriculas_totales:gridCells.length||null,
+    cuadriculas_presencia:gridCells.length?gridCells.filter(c=>presenceKeys.has(c.key)).length:null,
+    frecuencia_ocupacion:gridCells.length?+(gridCells.filter(c=>presenceKeys.has(c.key)).length*100/gridCells.length).toFixed(1):null,
+    presencia_keys:gridCells.length?[...presenceKeys].filter(k=>gridCells.find(c=>c.key===k)):null,
+    fotos:photos.slice(),
     creado: editId? (records.find(r=>r.id===editId)||{}).creado||Date.now() : Date.now()
   };
   if(editId){const i=records.findIndex(r=>r.id===editId);records[i]=rec;toast('Registro actualizado')}
@@ -1424,10 +1432,18 @@ function resetForm(){
   $('#f_fecha').value=new Date().toISOString().slice(0,10);
   $('#f_editid').value=''; photos=[];currentPoly=null;currentPolyAcc=null;vertexAcc=[];renderPhotos();
   if(drawing)cancelDraw();
+  // reset de la malla/frecuencia
+  presenceKeys.clear(); gridCells=[]; gridM=0; autoUnitFreq=false;
+  if(gridLayer&&fmap){fmap.removeLayer(gridLayer);gridLayer=null}
+  document.querySelectorAll('#gridCfg button').forEach(x=>x.classList.remove('on'));
+  const g0=document.querySelector('#gridCfg button[data-m="0"]'); if(g0)g0.classList.add('on');
+  $('#btnGridPresence').disabled=true; $('#btnGridClear').disabled=true;
+  freqInfo('Cierra un polígono y elige un tamaño de malla para calcular la frecuencia de cuadrículas con presencia.');{const w=document.getElementById('gridAccWarn');if(w)w.style.display='none';}
   if(drawnItems)drawnItems.clearLayers(); $('#utmPoint').innerHTML='UTM ETRS89: —'; polyInfo();
   const ti=$('#taxInfo');if(ti)ti.style.display='none';
 }
 $('#btnReset').onclick=()=>{resetForm();toast('Formulario limpio')};
+$('#f_unidad').addEventListener('change',()=>{ maybeCopyFreq(); if($('#f_unidad').value==='Frecuencia (%)'&&gridCells.length)updateFreq(); });
 
 /* ================= LIST ================= */
 $('#searchRec').addEventListener('input',renderList);
@@ -1445,6 +1461,7 @@ function renderList(){
       r.fenologia&&esc(r.fenologia),
       r.habitat&&esc(r.habitat.split(' · ')[0]),
       r.pliego&&'📄 '+esc(r.pliego),
+      r.frecuencia_ocupacion!=null&&`▦ ${r.frecuencia_ocupacion}% (${r.cuadriculas_presencia}/${r.cuadriculas_totales} · ${r.malla_m>=1000?r.malla_m/1000+'km':r.malla_m+'m'})`,
       `UTM ${u.zone}N ${u.x.toFixed(0)} ${u.y.toFixed(0)}`,
       r.fotos&&r.fotos.length&&`📷 ${r.fotos.length}`
     ].filter(Boolean).map(x=>`<span>${x}</span>`).join('');
@@ -1475,106 +1492,177 @@ function editRec(id){
   document.querySelector('nav.tabs button[data-tab="form"]').click();
   initFormMap();
   if(currentPoly){drawnItems.clearLayers();const ly=L.polygon(currentPoly,{color:'#b4541f'});drawnItems.addLayer(ly);fmap.fitBounds(ly.getBounds())}
+  // restaurar malla y presencias
+  presenceKeys.clear(); gridCells=[]; gridM=0;
+  if(gridLayer&&fmap){fmap.removeLayer(gridLayer);gridLayer=null}
+  document.querySelectorAll('#gridCfg button').forEach(x=>x.classList.remove('on'));
+  if(r.malla_m && currentPoly){
+    gridM=r.malla_m;
+    const gb=document.querySelector(`#gridCfg button[data-m="${gridM}"]`); if(gb)gb.classList.add('on');
+    if(Array.isArray(r.presencia_keys))r.presencia_keys.forEach(k=>presenceKeys.add(k));
+    setTimeout(()=>{buildGrid();},150);
+  } else {
+    const g0=document.querySelector('#gridCfg button[data-m="0"]'); if(g0)g0.classList.add('on');
+    freqInfo('Cierra un polígono y elige un tamaño de malla para calcular la frecuencia de cuadrículas con presencia.');{const w=document.getElementById('gridAccWarn');if(w)w.style.display='none';}
+  }
   polyInfo();window.scrollTo(0,0);toast('Editando registro');
 }
 
-/* ================= GRID MAP ================= */
-let gmap,gridLayer,ptLayer,gridM=100;
+/* ================= CUADRÍCULA Y FRECUENCIA DE OCUPACIÓN ================= */
 function mapWarn(which){
   const el=document.getElementById(which);
   if(el)el.innerHTML='<div style="padding:18px;font-size:13px;color:#6b5400;background:#fbf4e3;border-radius:8px;height:100%;display:flex;align-items:center;justify-content:center;text-align:center">Mapa no disponible sin conexión. Puedes registrar el punto por GPS o coordenadas; el dibujo de polígonos requiere el mapa.</div>';
 }
-function initGrid(){
-  if(typeof L==='undefined'){mapWarn('gridmap');return}
-  if(!gmap){
-    gmap=L.map('gridmap',{center:[40.33,-3.87],zoom:6});
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(gmap);
-    watchSize('gridmap',gmap);
-    gridLayer=L.layerGroup().addTo(gmap); ptLayer=L.layerGroup().addTo(gmap);
-    gmap.on('moveend',drawGrid);
+/* Estado de la malla sobre el mapa del formulario */
+let gridM=0;                 // tamaño de celda en m (0 = sin malla)
+let gridLayer=null;          // capa Leaflet con los rectángulos de la malla
+let gridCells=[];            // celdas dentro del polígono: {key,x,y,z,bounds}
+let presenceKeys=new Set();  // claves de celdas marcadas con presencia
+
+/* ¿Una celda (rectángulo UTM) cae dentro o toca el polígono? Test por solape:
+   consideramos la celda incluida si su centro está dentro del polígono O si
+   algún vértice del polígono cae dentro de la celda (cobertura de bordes). */
+function pointInPoly(lat,lon,poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const yi=poly[i][0],xi=poly[i][1],yj=poly[j][0],xj=poly[j][1];
+    if(((yi>lat)!==(yj>lat)) && (lon < (xj-xi)*(lat-yi)/(yj-yi)+xi)) inside=!inside;
   }
-  setTimeout(()=>{gmap.invalidateSize();fitToRecords();drawGrid()},60);
+  return inside;
 }
-function fitToRecords(){
-  const pts=records.filter(r=>!isNaN(r.lat));
-  if(!pts.length)return;
-  const b=L.latLngBounds(pts.map(r=>[r.lat,r.lon]));gmap.fitBounds(b.pad(0.4),{maxZoom:15});
+function cellIntersectsPoly(cLatLng,bounds,poly){
+  // centro de la celda dentro del polígono
+  if(pointInPoly(cLatLng[0],cLatLng[1],poly))return true;
+  // o algún vértice del polígono dentro de la celda
+  const [s,w,n,e]=bounds;
+  for(const [la,lo] of poly){ if(la>=s&&la<=n&&lo>=w&&lo<=e)return true; }
+  return false;
 }
+function buildGrid(){
+  if(gridLayer){fmap.removeLayer(gridLayer);gridLayer=null}
+  gridCells=[];
+  $('#btnGridPresence').disabled=true; $('#btnGridClear').disabled=true;
+  if(!currentPoly||currentPoly.length<3){ freqInfo('Cierra primero un polígono de área de ocupación.'); return; }
+  if(!gridM){ freqInfo('Elige un tamaño de malla para calcular la frecuencia de ocupación.'); return; }
+  if(typeof L==='undefined'||!fmap)return;
+  const z=utmZone(currentPoly[0][1]);
+  // bounding box del polígono en UTM
+  const xs=[],ys=[];
+  currentPoly.forEach(([la,lo])=>{const [x,y]=proj4("EPSG:258"+z,[lo,la]);xs.push(x);ys.push(y)});
+  const minx=Math.floor(Math.min(...xs)/gridM)*gridM, maxx=Math.ceil(Math.max(...xs)/gridM)*gridM;
+  const miny=Math.floor(Math.min(...ys)/gridM)*gridM, maxy=Math.ceil(Math.max(...ys)/gridM)*gridM;
+  const ncell=((maxx-minx)/gridM)*((maxy-miny)/gridM);
+  if(ncell>20000){ freqInfo(`Malla demasiado fina para esta área (${Math.round(ncell)} celdas). Elige un tamaño mayor.`); return; }
+  gridLayer=L.layerGroup().addTo(fmap);
+  for(let x=minx;x<maxx;x+=gridM)for(let y=miny;y<maxy;y+=gridM){
+    const ll=fromUTM(x,y,z), ur=fromUTM(x+gridM,y+gridM,z);
+    const bounds=[Math.min(ll[0],ur[0]),Math.min(ll[1],ur[1]),Math.max(ll[0],ur[0]),Math.max(ll[1],ur[1])];
+    const cx=(x+gridM/2), cy=(y+gridM/2); const c=fromUTM(cx,cy,z);
+    if(!cellIntersectsPoly(c,bounds,currentPoly))continue;
+    const key=x+'_'+y;
+    gridCells.push({key,x,y,z,bounds,center:c});
+  }
+  renderGrid();
+  $('#btnGridPresence').disabled=false; $('#btnGridClear').disabled=false;
+  updateFreq();
+}
+function renderGrid(){
+  if(!gridLayer)return;
+  gridLayer.clearLayers();
+  gridCells.forEach(cell=>{
+    const has=presenceKeys.has(cell.key);
+    L.rectangle([[cell.bounds[0],cell.bounds[1]],[cell.bounds[2],cell.bounds[3]]],{
+      color:'#5d7a5e',weight:.7,
+      fillColor:has?'#b4541f':'#5d7a5e',
+      fillOpacity:has?0.55:0.06
+    }).addTo(gridLayer);
+  });
+  // repintar el polígono encima para que se vea el contorno
+  if(currentPoly)L.polygon(currentPoly,{color:'#b4541f',weight:2,fill:false}).addTo(gridLayer);
+}
+function freqInfo(msg){ $('#freqInfo').innerHTML=msg; }
+function updateFreq(){
+  const total=gridCells.length;
+  const pres=gridCells.filter(c=>presenceKeys.has(c.key)).length;
+  if(!total){freqInfo('Sin celdas dentro del polígono.');return}
+  const f=pres*100/total;
+  freqInfo(`Malla <b>${gridM>=1000?gridM/1000+' km':gridM+' m'}</b> (huso ${gridCells[0].z}N) · `+
+    `cuadrículas con presencia <b>${pres}</b> / totales <b>${total}</b> · `+
+    `frecuencia de ocupación = <b>${f.toFixed(1)} %</b>`+
+    (autoUnitFreq?` · <span style="opacity:.7">copiado a Abundancia</span>`:''));
+}
+/* marcar la celda que contiene una posición */
+function markPresenceAt(lat,lon){
+  if(!gridCells.length){toast('Genera primero la malla');return false}
+  const z=gridCells[0].z;
+  const [x,y]=proj4("EPSG:258"+z,[lon,lat]);
+  const cx=Math.floor(x/gridM)*gridM, cy=Math.floor(y/gridM)*gridM;
+  const key=cx+'_'+cy;
+  const cell=gridCells.find(c=>c.key===key);
+  if(!cell){toast('Ese punto cae fuera del área de ocupación');return false}
+  presenceKeys.add(key);
+  renderGrid(); updateFreq(); maybeCopyFreq();
+  return true;
+}
+let autoUnitFreq=false;
+function maybeCopyFreq(){
+  // si la unidad de conteo es Frecuencia (%), volcar el valor a Abundancia automáticamente
+  if($('#f_unidad').value==='Frecuencia (%)' && gridCells.length){
+    const f=gridCells.filter(c=>presenceKeys.has(c.key)).length*100/gridCells.length;
+    $('#f_abundancia').value=f.toFixed(1); autoUnitFreq=true;
+  } else autoUnitFreq=false;
+}
+/* selector de tamaño de malla */
 document.querySelectorAll('#gridCfg button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#gridCfg button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on');gridM=+b.dataset.m;
-  // Las mallas finas requieren escala adecuada: acercar a una población automáticamente.
-  if(gmap){
-    const pts=records.filter(r=>!isNaN(r.lat));
-    if(gridM<=50 && pts.length){
-      const zoomFor={5:19,10:18,25:18,50:17}[gridM]||17;
-      // centrar en la población más cercana al centro actual
-      const c=gmap.getCenter();
-      let best=pts[0],bd=Infinity;
-      pts.forEach(r=>{const d=(r.lat-c.lat)**2+(r.lon-c.lng)**2;if(d<bd){bd=d;best=r}});
-      if(gmap.getZoom()<zoomFor-1) gmap.setView([best.lat,best.lon],zoomFor);
-      else drawGrid();
-    } else drawGrid();
+  b.classList.add('on'); gridM=+b.dataset.m;
+  const w=$('#gridAccWarn');
+  if(w){
+    if(gridM && gridM<=10){ w.style.display='block';
+      w.innerHTML=`⚠ Malla de ${gridM} m: por debajo de la precisión habitual de un GPS de móvil (±4–10 m). El marcado por GPS puede asignar la celda contigua; para estos tamaños conviene confirmar tocando la celda en el mapa.`;
+    } else { w.style.display='none'; }
   }
+  if(gridM&&currentPoly&&fmap){
+    // encuadrar el polígono para ver la malla
+    const ly=L.polygon(currentPoly); fmap.fitBounds(ly.getBounds().pad(0.3));
+  }
+  buildGrid();
 });
-function drawGrid(){
-  if(!gmap)return;
-  gridLayer.clearLayers();ptLayer.clearLayers();
-  const pts=records.filter(r=>!isNaN(r.lat)&&!isNaN(r.lon));
-  pts.forEach(r=>L.circleMarker([r.lat,r.lon],{radius:4,color:'#b4541f',fillColor:'#b4541f',fillOpacity:.9}).addTo(ptLayer));
-  if(!pts.length){$('#gridInfo').innerHTML='No hay poblaciones registradas todavía.';return}
-  const b=gmap.getBounds();
-  const c=gmap.getCenter(); const z=utmZone(c.lng);
-  // Para rejillas finas (<1 km) se dibuja sólo un buffer alrededor de cada población,
-  // no todo el viewport (evita millones de celdas y hace útil la malla fina).
-  const fine = gridM<1000;
-  const buffer = gridM*25; // p.ej. 5 m -> 125 m a cada lado
-  let cellsDrawn=0, occupied={};
-  // celdas ocupadas (todas las poblaciones en este huso)
-  pts.forEach(r=>{const u=toUTM(r.lat,r.lon);if(u.zone!==z)return;const cx=Math.floor(u.x/gridM)*gridM,cy=Math.floor(u.y/gridM)*gridM;occupied[cx+'_'+cy]=(occupied[cx+'_'+cy]||0)+1});
-
-  // construir conjunto de rangos a dibujar
-  let ranges=[];
-  if(fine){
-    // un recuadro por población visible, fusionando solapes implícitamente vía dedupe de celdas
-    const seen=new Set();
-    pts.forEach(r=>{
-      if(!b.contains([r.lat,r.lon]))return;
-      const u=toUTM(r.lat,r.lon);if(u.zone!==z)return;
-      const x0=Math.floor((u.x-buffer)/gridM)*gridM, x1=Math.ceil((u.x+buffer)/gridM)*gridM;
-      const y0=Math.floor((u.y-buffer)/gridM)*gridM, y1=Math.ceil((u.y+buffer)/gridM)*gridM;
-      ranges.push([x0,x1,y0,y1]);
-    });
-  }else{
-    const sw=proj4("EPSG:258"+z,[b.getWest(),b.getSouth()]);
-    const ne=proj4("EPSG:258"+z,[b.getEast(),b.getNorth()]);
-    ranges.push([Math.floor(sw[0]/gridM)*gridM,Math.ceil(ne[0]/gridM)*gridM,
-                 Math.floor(sw[1]/gridM)*gridM,Math.ceil(ne[1]/gridM)*gridM]);
-  }
-  // contar total de celdas para proteger el navegador
-  let total=0; ranges.forEach(([x0,x1,y0,y1])=>total+=((x1-x0)/gridM)*((y1-y0)/gridM));
-  if(total>12000){
-    $('#gridInfo').innerHTML = fine
-      ? `Demasiadas celdas (${Math.round(total)}). Acércate a una población para ver la malla de <b>${gridM} m</b>.`
-      : `Acércate para ver la rejilla de <b>${gridM>=1000?gridM/1000+' km':gridM+' m'}</b> (${Math.round(total)} celdas).`;
-    return;
-  }
-  const drawn=new Set();
-  ranges.forEach(([x0,x1,y0,y1])=>{
-    for(let x=x0;x<x1;x+=gridM)for(let y=y0;y<y1;y+=gridM){
-      const key=x+'_'+y; if(drawn.has(key))continue; drawn.add(key);
-      const ll=fromUTM(x,y,z),ur=fromUTM(x+gridM,y+gridM,z);
-      const n=occupied[key]||0;
-      L.rectangle([[ll[0],ll[1]],[ur[0],ur[1]]],{
-        color:'#5d7a5e',weight:.6,fillColor:n?'#b4541f':'#5d7a5e',
-        fillOpacity:n?Math.min(.25+n*0.18,.75):0.04
-      }).addTo(gridLayer);
-      cellsDrawn++;
+/* botón: marcar presencia con GPS */
+$('#btnGridPresence').onclick=()=>{
+  if(!navigator.geolocation){toast('GPS no disponible (requiere HTTPS)');return}
+  toast('Tomando posición…');
+  navigator.geolocation.getCurrentPosition(p=>{
+    const acc=p.coords.accuracy;
+    if(markPresenceAt(p.coords.latitude,p.coords.longitude)){
+      // avisar si la precisión del GPS es grande respecto al tamaño de celda
+      if(gridM && acc > gridM*0.5){
+        toast(`Presencia marcada · ⚠ precisión ±${Math.round(acc)} m supera la celda de ${gridM} m`);
+        gridAccWarn(acc);
+      } else {
+        toast(`Presencia marcada (±${Math.round(acc)} m)`);
+      }
     }
-  });
-  const occ=Object.keys(occupied).length;
-  $('#gridInfo').innerHTML=`Rejilla <b>${gridM>=1000?gridM/1000+' km':gridM+' m'}</b> · huso ${z}N · ${pts.length} poblaciones · ${occ} celda${occ===1?'':'s'} ocupada${occ===1?'':'s'}${fine?' · <span style="opacity:.7">malla acotada a las poblaciones</span>':''}`;
+  },err=>toast('No se pudo obtener el GPS'+(err.code===1?' (permiso denegado)':'')),
+  {enableHighAccuracy:true,timeout:12000,maximumAge:0});
+};
+function gridAccWarn(acc){
+  const el=$('#gridAccWarn'); if(!el)return;
+  el.style.display='block';
+  el.innerHTML=`⚠ La precisión del GPS (±${Math.round(acc)} m) es mayor que la mitad de la celda (${gridM} m). `+
+    `El punto podría caer en una cuadrícula contigua a la real. En mallas finas, confirma visualmente la celda en el mapa o márcala tocándola.`;
 }
+/* permitir también marcar/desmarcar tocando una celda en el mapa */
+function gridMapClick(latlng){
+  if(!gridCells.length||!gridM)return;
+  const z=gridCells[0].z;
+  const [x,y]=proj4("EPSG:258"+z,[latlng.lng,latlng.lat]);
+  const key=Math.floor(x/gridM)*gridM+'_'+Math.floor(y/gridM)*gridM;
+  if(!gridCells.find(c=>c.key===key))return;
+  if(presenceKeys.has(key))presenceKeys.delete(key); else presenceKeys.add(key);
+  renderGrid(); updateFreq(); maybeCopyFreq();
+}
+$('#btnGridClear').onclick=()=>{presenceKeys.clear();renderGrid();updateFreq();maybeCopyFreq();toast('Presencias borradas')};
 
 /* ================= EXPORT / IMPORT ================= */
 function dl(name,content,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click()}
@@ -1595,12 +1683,14 @@ function geoProps(r){const u=r.utm||toUTM(r.lat,r.lon);return{
   certidumbre:r.certidumbre,fecha:r.fecha,localidad:r.localidad,
   unidad:r.unidad,abundancia:r.abundancia,cobertura:r.cobertura,fenologia:r.fenologia,
   habitat_eunis:r.habitat,sustrato:r.sustrato,pliego:r.pliego,observador:r.observador,
-  notas:r.notas,utm_huso:u.zone,utm_x:+u.x.toFixed(1),utm_y:+u.y.toFixed(1),epsg:'258'+u.zone,n_fotos:(r.fotos||[]).length};}
+  notas:r.notas,utm_huso:u.zone,utm_x:+u.x.toFixed(1),utm_y:+u.y.toFixed(1),epsg:'258'+u.zone,
+  malla_m:r.malla_m||'',cuadriculas_totales:r.cuadriculas_totales||'',cuadriculas_presencia:r.cuadriculas_presencia||'',frecuencia_ocupacion_pct:(r.frecuencia_ocupacion!=null?r.frecuencia_ocupacion:''),
+  n_fotos:(r.fotos||[]).length};}
 $('#btnCsv').onclick=()=>{
-  const cols=['especie','familia','cultivo_ref','psc','psua','uicn','certidumbre','fecha','lat','lon','utm_huso','utm_x','utm_y','localidad','unidad','abundancia','cobertura','fenologia','habitat','sustrato','pliego','observador','notas','n_vertices_poligono','area_m2'];
+  const cols=['especie','familia','cultivo_ref','psc','psua','uicn','certidumbre','fecha','lat','lon','utm_huso','utm_x','utm_y','localidad','unidad','abundancia','cobertura','fenologia','habitat','sustrato','pliego','observador','notas','n_vertices_poligono','area_m2','malla_m','cuadriculas_totales','cuadriculas_presencia','frecuencia_ocupacion_pct'];
   const rows=[cols.join(',')];
   records.forEach(r=>{const u=r.utm||toUTM(r.lat,r.lon);const a=r.poligono?polyAreaM2(r.poligono):'';
-    const vals=[r.especie,r.familia||'',r.cultivo||'',r.psc?'sí':'',r.psua?'sí':'',r.uicn||'',r.certidumbre,r.fecha,r.lat,r.lon,u.zone,u.x.toFixed(1),u.y.toFixed(1),r.localidad,r.unidad,r.abundancia,r.cobertura,r.fenologia,r.habitat,r.sustrato,r.pliego,r.observador,r.notas,r.poligono?r.poligono.length:'',a===''?'':a.toFixed(0)];
+    const vals=[r.especie,r.familia||'',r.cultivo||'',r.psc?'sí':'',r.psua?'sí':'',r.uicn||'',r.certidumbre,r.fecha,r.lat,r.lon,u.zone,u.x.toFixed(1),u.y.toFixed(1),r.localidad,r.unidad,r.abundancia,r.cobertura,r.fenologia,r.habitat,r.sustrato,r.pliego,r.observador,r.notas,r.poligono?r.poligono.length:'',a===''?'':a.toFixed(0),r.malla_m||'',r.cuadriculas_totales||'',r.cuadriculas_presencia||'',(r.frecuencia_ocupacion!=null?r.frecuencia_ocupacion:'')];
     rows.push(vals.map(v=>{v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(','));
   });
   dl('florcwr.csv','\ufeff'+rows.join('\n'),'text/csv');toast('CSV exportado');
