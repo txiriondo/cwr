@@ -1389,7 +1389,7 @@ function maybeSaveReserva(){
   const nombre=$('#f_reserva').value.trim();
   const info=$('#reservaSaveInfo');
   if(!nombre || !currentPoly || currentPoly.length<3){ if(info)info.style.display='none'; return; }
-  reservas[nombre]={poligono:currentPoly.slice(), acc:(currentPolyAcc||[]).slice(), updated:Date.now()};
+  reservas[nombre]={poligono:currentPoly.slice(), acc:(currentPolyAcc||[]).slice(), localidad:$('#f_localidad').value.trim(), updated:Date.now()};
   save(LS_RES,reservas);
   refreshReservaPicker();
   if(info){info.style.display='block';info.innerHTML=`✓ Reserva «<b>${esc(nombre)}</b>» guardada · su polígono se podrá reutilizar en otros registros.`;}
@@ -1911,6 +1911,7 @@ function refreshReservaPicker(){
 function loadReserva(nombre){
   const r=reservas[nombre]; if(!r)return;
   $('#f_reserva').value=nombre;
+  if(r.localidad)$('#f_localidad').value=r.localidad;
   currentPoly=r.poligono.slice(); currentPolyAcc=(r.acc||[]).slice();
   initFormMap();
   if(fmap){
@@ -1931,6 +1932,7 @@ function loadReserva(nombre){
 }
 $('#btnLoadReserva').onclick=()=>{const n=$('#f_reservaPick').value;if(!n){toast('Elige una reserva');return}loadReserva(n)};
 $('#f_reserva').addEventListener('blur',()=>{ if(currentPoly&&currentPoly.length>=3)maybeSaveReserva(); });
+$('#f_localidad').addEventListener('blur',()=>{ if(currentPoly&&currentPoly.length>=3&&$('#f_reserva').value.trim())maybeSaveReserva(); });
 
 /* init */
 $('#f_fecha').value=new Date().toISOString().slice(0,10);
