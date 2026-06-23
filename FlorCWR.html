@@ -829,40 +829,6 @@ textarea{resize:vertical;min-height:54px}
 
   <!-- ===== FORM ===== -->
   <section class="pane on" id="pane-form">
-    <div class="field suggest">
-      <label>Especie <span class="req">*</span> <span class="hint" id="taxstat"></span></label>
-      <input id="f_especie" autocomplete="off" placeholder="Empieza a escribir el taxón…">
-      <div class="suggest-list" id="suggestList" style="display:none"></div>
-    </div>
-    <div class="utmline" id="taxInfo" style="display:none;margin-top:-9px;margin-bottom:15px"></div>
-
-    <div class="row">
-      <div class="field">
-        <label>Certidumbre de ID</label>
-        <select id="f_certidumbre">
-          <option value="">—</option>
-          <option>Segura</option>
-          <option>Probable</option>
-          <option>Dudosa</option>
-          <option>Pendiente confirmación</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Fecha de observación <span class="req">*</span></label>
-        <input type="date" id="f_fecha">
-      </div>
-    </div>
-
-    <!-- COORDENADAS -->
-    <div class="field">
-      <label>Coordenadas del punto <span class="req">*</span> <span class="hint">lat, lon (WGS84)</span></label>
-      <div class="coordbar">
-        <div class="field"><input id="f_lat" inputmode="decimal" placeholder="Latitud"></div>
-        <div class="field"><input id="f_lon" inputmode="decimal" placeholder="Longitud"></div>
-        <button class="btn sm" id="btnGPS" title="Usar GPS">GPS</button>
-      </div>
-      <div class="utmline" id="utmPoint">UTM ETRS89: —</div>
-    </div>
 
     <div class="field">
       <label>Localidad</label>
@@ -905,6 +871,41 @@ textarea{resize:vertical;min-height:54px}
       </div>
       <div class="utmline" id="polyInfo">Sin polígono. Inicia un polígono y marca el área de la reserva: tocando el mapa, fijando vértices con el GPS al recorrer el perímetro, o grabando automáticamente mientras caminas.</div>
       <div class="utmline" id="reservaSaveInfo" style="display:none"></div>
+    </div>
+
+    <div class="field suggest">
+      <label>Especie <span class="req">*</span> <span class="hint" id="taxstat"></span></label>
+      <input id="f_especie" autocomplete="off" placeholder="Empieza a escribir el taxón…">
+      <div class="suggest-list" id="suggestList" style="display:none"></div>
+    </div>
+    <div class="utmline" id="taxInfo" style="display:none;margin-top:-9px;margin-bottom:15px"></div>
+
+    <div class="row">
+      <div class="field">
+        <label>Certidumbre de ID</label>
+        <select id="f_certidumbre">
+          <option value="">—</option>
+          <option>Segura</option>
+          <option>Probable</option>
+          <option>Dudosa</option>
+          <option>Pendiente confirmación</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Fecha de observación <span class="req">*</span></label>
+        <input type="date" id="f_fecha">
+      </div>
+    </div>
+
+    <!-- COORDENADAS -->
+    <div class="field">
+      <label>Coordenadas del punto <span class="req">*</span> <span class="hint">lat, lon (WGS84)</span></label>
+      <div class="coordbar">
+        <div class="field"><input id="f_lat" inputmode="decimal" placeholder="Latitud"></div>
+        <div class="field"><input id="f_lon" inputmode="decimal" placeholder="Longitud"></div>
+        <button class="btn sm" id="btnGPS" title="Usar GPS">GPS</button>
+      </div>
+      <div class="utmline" id="utmPoint">UTM ETRS89: —</div>
     </div>
 
     <!-- CUADRÍCULA Y FRECUENCIA DE OCUPACIÓN -->
