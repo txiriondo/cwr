@@ -751,6 +751,7 @@ textarea{resize:vertical;min-height:54px}
   background:var(--sage);color:#fff;padding:10px 13px;cursor:pointer;white-space:nowrap}
 .btn:active{transform:translateY(1px)}
 .btn.ghost{background:none;color:var(--sage-d)}
+.btn.ghost.on{background:#2f7be0;color:#fff;border-color:#1c5fb4}
 .btn.clay{background:var(--clay);border-color:#8c3f15}
 .btn.wide{width:100%;padding:13px;font-size:15px}
 .btn.sm{padding:7px 10px;font-size:13px}
@@ -868,6 +869,64 @@ textarea{resize:vertical;min-height:54px}
       <input id="f_localidad" placeholder="Topónimo, paraje, municipio…">
     </div>
 
+    <!-- RESERVA GENÉTICA -->
+    <div class="field">
+      <label>Nombre de la reserva genética</label>
+      <input id="f_reserva" autocomplete="off" placeholder="Grazalema 1">
+    </div>
+    <div class="field" id="reservaPickBlock" style="display:none">
+      <label>Reservas guardadas <span class="hint">cargar polígono ya tomado</span></label>
+      <div class="row" style="align-items:end">
+        <div class="field" style="margin-bottom:0">
+          <select id="f_reservaPick"><option value="">— elegir reserva guardada —</option></select>
+        </div>
+        <button class="btn sm" id="btnLoadReserva" style="margin-bottom:0">Cargar</button>
+      </div>
+    </div>
+
+    <!-- AREA DE LA RESERVA -->
+    <div class="field">
+      <label>Área de la reserva <span class="hint">polígono de la reserva</span></label>
+      <div id="map"></div>
+      <div class="maptools">
+        <button class="btn sm ghost" id="btnDraw">✏︎ Iniciar polígono</button>
+        <button class="btn sm clay" id="btnGpsVtx" style="display:none">📍 Añadir vértice GPS</button>
+        <button class="btn sm ghost" id="btnAutoTrack" style="display:none">⦿ Grabar andando</button>
+        <button class="btn sm ghost" id="btnUndo" style="display:none">↶ Deshacer</button>
+        <button class="btn sm" id="btnFinish" style="display:none">✓ Cerrar polígono</button>
+        <button class="btn sm ghost" id="btnClearPoly">Borrar</button>
+        <button class="btn sm ghost" id="btnCenterPoint">Centrar en el punto</button>
+        <button class="btn sm ghost" id="btnTrackMe">◉ Seguir mi posición</button>
+      </div>
+      <div class="utmline" id="vertexInfo" style="display:none"></div>
+      <div class="trackrate" id="trackRate" style="display:none">Grabar un punto cada
+        <select id="autoEvery"><option value="3">3 s</option><option value="5" selected>5 s</option><option value="10">10 s</option><option value="15">15 s</option><option value="30">30 s</option></select>
+        (sólo en modo «Grabar andando»)
+      </div>
+      <div class="utmline" id="polyInfo">Sin polígono. Inicia un polígono y marca el área de la reserva: tocando el mapa, fijando vértices con el GPS al recorrer el perímetro, o grabando automáticamente mientras caminas.</div>
+      <div class="utmline" id="reservaSaveInfo" style="display:none"></div>
+    </div>
+
+    <!-- CUADRÍCULA Y FRECUENCIA DE OCUPACIÓN -->
+    <div class="field" id="gridBlock">
+      <label>Frecuencia de ocupación <span class="hint">cuadrícula UTM ETRS89 sobre el área</span></label>
+      <div class="gridcfg" id="gridCfg">
+        <button data-m="0" class="on">Sin malla</button>
+        <button data-m="5">5 m</button>
+        <button data-m="10">10 m</button>
+        <button data-m="25">25 m</button>
+        <button data-m="50">50 m</button>
+        <button data-m="100">100 m</button>
+        <button data-m="1000">1 km</button>
+      </div>
+      <div class="maptools">
+        <button class="btn sm clay" id="btnGridPresence" disabled>✓ Marcar presencia (GPS)</button>
+        <button class="btn sm ghost" id="btnGridClear" disabled>Limpiar presencias</button>
+      </div>
+      <div class="utmline" id="freqInfo">Cierra un polígono y elige un tamaño de malla para calcular la frecuencia de cuadrículas con presencia.</div>
+      <div class="note warn" id="gridAccWarn" style="display:none;margin-top:8px"></div>
+    </div>
+
     <!-- MÉTODO DE ESTIMACIÓN -->
     <div class="field">
       <label>Estimación del tamaño poblacional</label>
@@ -892,7 +951,7 @@ textarea{resize:vertical;min-height:54px}
           <input id="f_transN" inputmode="numeric" placeholder="ej. 18">
         </div>
       </div>
-      <div class="utmline" id="transInfo">Introduce el tamaño del transecto y el nº de individuos. Necesitas un polígono de área de ocupación cerrado.</div>
+      <div class="utmline" id="transInfo">Introduce el tamaño del transecto y el nº de individuos. Necesitas un polígono de área de la reserva cerrado.</div>
     </div>
 
     <!-- ABUNDANCIA -->
@@ -972,47 +1031,6 @@ textarea{resize:vertical;min-height:54px}
       <input id="f_pliego" placeholder="ej. MA 123456 / leg. JMI 0421">
     </div>
 
-    <!-- AREA DE OCUPACION -->
-    <div class="field">
-      <label>Área de ocupación <span class="hint">polígono de la población</span></label>
-      <div id="map"></div>
-      <div class="maptools">
-        <button class="btn sm ghost" id="btnDraw">✏︎ Iniciar polígono</button>
-        <button class="btn sm clay" id="btnGpsVtx" style="display:none">📍 Añadir vértice GPS</button>
-        <button class="btn sm ghost" id="btnAutoTrack" style="display:none">⦿ Grabar andando</button>
-        <button class="btn sm ghost" id="btnUndo" style="display:none">↶ Deshacer</button>
-        <button class="btn sm" id="btnFinish" style="display:none">✓ Cerrar polígono</button>
-        <button class="btn sm ghost" id="btnClearPoly">Borrar</button>
-        <button class="btn sm ghost" id="btnCenterPoint">Centrar en el punto</button>
-      </div>
-      <div class="utmline" id="vertexInfo" style="display:none"></div>
-      <div class="trackrate" id="trackRate" style="display:none">Grabar un punto cada
-        <select id="autoEvery"><option value="3">3 s</option><option value="5" selected>5 s</option><option value="10">10 s</option><option value="15">15 s</option><option value="30">30 s</option></select>
-        (sólo en modo «Grabar andando»)
-      </div>
-      <div class="utmline" id="polyInfo">Sin polígono. Inicia un polígono y marca el área de ocupación: tocando el mapa, fijando vértices con el GPS al recorrer el perímetro, o grabando automáticamente mientras caminas.</div>
-    </div>
-
-    <!-- CUADRÍCULA Y FRECUENCIA DE OCUPACIÓN -->
-    <div class="field" id="gridBlock">
-      <label>Frecuencia de ocupación <span class="hint">cuadrícula UTM ETRS89 sobre el área</span></label>
-      <div class="gridcfg" id="gridCfg">
-        <button data-m="0" class="on">Sin malla</button>
-        <button data-m="5">5 m</button>
-        <button data-m="10">10 m</button>
-        <button data-m="25">25 m</button>
-        <button data-m="50">50 m</button>
-        <button data-m="100">100 m</button>
-        <button data-m="1000">1 km</button>
-      </div>
-      <div class="maptools">
-        <button class="btn sm clay" id="btnGridPresence" disabled>✓ Marcar presencia (GPS)</button>
-        <button class="btn sm ghost" id="btnGridClear" disabled>Limpiar presencias</button>
-      </div>
-      <div class="utmline" id="freqInfo">Cierra un polígono y elige un tamaño de malla para calcular la frecuencia de cuadrículas con presencia.</div>
-      <div class="note warn" id="gridAccWarn" style="display:none;margin-top:8px"></div>
-    </div>
-
     <!-- FOTOS -->
     <div class="field">
       <label>Fotos</label>
@@ -1081,8 +1099,9 @@ textarea{resize:vertical;min-height:54px}
 </script>
 <script>
 /* ============ FlorCWR ============ */
-const LS='florcwr_v1', LS_TAX='florcwr_tax', LS_OBS='florcwr_observer';
+const LS='florcwr_v1', LS_TAX='florcwr_tax', LS_OBS='florcwr_observer', LS_RES='florcwr_reservas';
 let records = load(LS, []);
+let reservas = load(LS_RES, {});         // { nombre: {poligono:[...], acc:[...], updated:ts} }
 let taxa = load(LS_TAX, null);          // null => usar lista semilla
 let photos = [];                         // fotos del formulario actual (dataURL)
 let currentPoly = null;                  // [[lat,lon],...] del formulario
@@ -1362,6 +1381,18 @@ function finishDraw(){
   polyInfo(); syncDrawButtons(); updateVertexInfo();
   if(gridM)buildGrid();
   if($('#f_metodo').value==='Transecto')calcTransecto();
+  maybeSaveReserva();
+}
+/* guarda (o actualiza) la reserva si hay nombre escrito y polígono cerrado */
+function maybeSaveReserva(){
+  const nombre=$('#f_reserva').value.trim();
+  const info=$('#reservaSaveInfo');
+  if(!nombre || !currentPoly || currentPoly.length<3){ if(info)info.style.display='none'; return; }
+  reservas[nombre]={poligono:currentPoly.slice(), acc:(currentPolyAcc||[]).slice(), updated:Date.now()};
+  save(LS_RES,reservas);
+  refreshReservaPicker();
+  if(info){info.style.display='block';info.innerHTML=`✓ Reserva «<b>${esc(nombre)}</b>» guardada · su polígono se podrá reutilizar en otros registros.`;}
+  toast('Reserva guardada ✓');
 }
 function cancelDraw(){
   if(autoTracking)stopAutoTrack();
@@ -1404,6 +1435,35 @@ $('#btnUndo').onclick=undoVertex;
 $('#btnClearPoly').onclick=()=>{cancelDraw();if(drawnItems)drawnItems.clearLayers();currentPoly=null;currentPolyAcc=null;polyInfo();presenceKeys.clear();if(gridLayer){fmap.removeLayer(gridLayer);gridLayer=null}gridCells=[];$('#btnGridPresence').disabled=true;$('#btnGridClear').disabled=true;freqInfo('Cierra un polígono y elige un tamaño de malla para calcular la frecuencia de cuadrículas con presencia.');{const w=document.getElementById('gridAccWarn');if(w)w.style.display='none';}};
 $('#btnCenterPoint').onclick=()=>{const la=parseFloat(latIn.value),lo=parseFloat(lonIn.value);if(isNaN(la)){toast('Introduce primero las coordenadas');return}initFormMap();fmap.setView([la,lo],16);placePointMarker()};
 
+/* ===== UBICACIÓN EN VIVO ===== */
+let liveWatch=null, liveMarker=null, liveAccCircle=null;
+function startLiveLocation(){
+  if(!navigator.geolocation){toast('GPS no disponible (requiere HTTPS)');return}
+  initFormMap(); if(!fmap)return;
+  if(liveWatch!=null){stopLiveLocation();return}
+  toast('Siguiendo tu posición…');
+  $('#btnTrackMe').classList.add('on');
+  liveWatch=navigator.geolocation.watchPosition(p=>{
+    const la=p.coords.latitude, lo=p.coords.longitude, acc=p.coords.accuracy;
+    if(!liveMarker){
+      liveMarker=L.circleMarker([la,lo],{radius:7,color:'#1c5fb4',fillColor:'#2f7be0',fillOpacity:.95,weight:2}).addTo(fmap);
+      liveMarker.bindTooltip('Tu posición',{direction:'top',offset:[0,-6]});
+    } else liveMarker.setLatLng([la,lo]);
+    if(!liveAccCircle){
+      liveAccCircle=L.circle([la,lo],{radius:acc,color:'#2f7be0',weight:1,fillColor:'#2f7be0',fillOpacity:.08}).addTo(fmap);
+    } else { liveAccCircle.setLatLng([la,lo]); liveAccCircle.setRadius(acc); }
+    liveMarker.bringToFront();
+  },err=>{toast('No se pudo seguir el GPS'+(err.code===1?' (permiso denegado)':''));stopLiveLocation();},
+  {enableHighAccuracy:true,maximumAge:2000,timeout:15000});
+}
+function stopLiveLocation(){
+  if(liveWatch!=null){navigator.geolocation.clearWatch(liveWatch);liveWatch=null}
+  $('#btnTrackMe').classList.remove('on');
+  toast('Seguimiento de posición detenido');
+}
+function liveMarkerToFront(){ if(liveMarker)liveMarker.bringToFront(); }
+$('#btnTrackMe').onclick=startLiveLocation;
+
 /* ================= PHOTOS ================= */
 $('#f_fotos').addEventListener('change',e=>{
   [...e.target.files].forEach(file=>{
@@ -1441,6 +1501,7 @@ $('#btnSave').onclick=()=>{
     especie:esp, familia:cat.f||'', cultivo:cat.c||'', psc:!!cat.psc, psua:!!cat.psua, uicn:cat.u||'',
     certidumbre:$('#f_certidumbre').value, fecha:$('#f_fecha').value,
     lat,lon, utm:toUTM(lat,lon), localidad:$('#f_localidad').value.trim(),
+    reserva:$('#f_reserva').value.trim(),
     metodo:$('#f_metodo').value,
     transecto_area_m2:$('#f_metodo').value==='Transecto'?(parseFloat($('#f_transArea').value)||null):null,
     transecto_n:$('#f_metodo').value==='Transecto'?(parseFloat($('#f_transN').value)||null):null,
@@ -1462,7 +1523,7 @@ $('#btnSave').onclick=()=>{
   saveAll();resetForm();renderCount();
 };
 function resetForm(){
-  ['f_especie','f_lat','f_lon','f_localidad','f_abundancia','f_pliego','f_notas','f_habitat','f_transArea','f_transN'].forEach(id=>$('#'+id).value='');
+  ['f_especie','f_lat','f_lon','f_localidad','f_reserva','f_abundancia','f_pliego','f_notas','f_habitat','f_transArea','f_transN'].forEach(id=>$('#'+id).value='');
   ['f_certidumbre','f_unidad','f_cobertura','f_fenologia','f_sustrato','f_metodo'].forEach(id=>$('#'+id).value='');
   $('#f_unidad').disabled=false; $('#f_abundancia').readOnly=false; $('#f_abundancia').style.background='';
   $('#transectoBlock').style.display='none';
@@ -1478,6 +1539,12 @@ function resetForm(){
   freqInfo('Cierra un polígono y elige un tamaño de malla para calcular la frecuencia de cuadrículas con presencia.');{const w=document.getElementById('gridAccWarn');if(w)w.style.display='none';}
   if(drawnItems)drawnItems.clearLayers(); $('#utmPoint').innerHTML='UTM ETRS89: —'; polyInfo();
   const ti=$('#taxInfo');if(ti)ti.style.display='none';
+  const ri=$('#reservaSaveInfo');if(ri)ri.style.display='none';
+  const rp=$('#f_reservaPick');if(rp)rp.value='';
+  refreshReservaPicker();
+  if(liveWatch!=null)stopLiveLocation();
+  if(liveMarker&&fmap){fmap.removeLayer(liveMarker);liveMarker=null}
+  if(liveAccCircle&&fmap){fmap.removeLayer(liveAccCircle);liveAccCircle=null}
 }
 $('#btnReset').onclick=()=>{resetForm();toast('Formulario limpio')};
 $('#f_unidad').addEventListener('change',()=>{ maybeCopyFreq(); if($('#f_unidad').value==='Frecuencia (%)'&&gridCells.length)updateFreq(); });
@@ -1542,6 +1609,7 @@ function renderList(){
     const meta=[
       r.fecha&&`<b>${r.fecha}</b>`,
       r.localidad&&esc(r.localidad),
+      r.reserva&&('🛡 '+esc(r.reserva)),
       r.abundancia&&`${esc(r.abundancia)} ${esc(r.unidad||'ud')}`,
       r.fenologia&&esc(r.fenologia),
       r.habitat&&esc(r.habitat.split(' · ')[0]),
@@ -1567,7 +1635,7 @@ function editRec(id){
   const r=records.find(x=>x.id===id);if(!r)return;
   taxIn.value=r.especie;latIn.value=r.lat;lonIn.value=r.lon;
   $('#f_certidumbre').value=r.certidumbre||'';$('#f_fecha').value=r.fecha||'';
-  $('#f_localidad').value=r.localidad||'';$('#f_unidad').value=r.unidad||'';
+  $('#f_localidad').value=r.localidad||'';$('#f_reserva').value=r.reserva||'';$('#f_unidad').value=r.unidad||'';
   $('#f_abundancia').value=r.abundancia||'';$('#f_cobertura').value=r.cobertura||'';
   $('#f_fenologia').value=r.fenologia||'';$('#f_habitat').value=r.habitat||'';
   $('#f_sustrato').value=r.sustrato||'';$('#f_pliego').value=r.pliego||'';
@@ -1670,6 +1738,7 @@ function renderGrid(){
   });
   // repintar el polígono encima para que se vea el contorno
   if(currentPoly)L.polygon(currentPoly,{color:'#b4541f',weight:2,fill:false}).addTo(gridLayer);
+  liveMarkerToFront();
 }
 function freqInfo(msg){ $('#freqInfo').innerHTML=msg; }
 function updateFreq(){
@@ -1771,7 +1840,7 @@ $('#btnGeo').onclick=()=>{
 };
 function geoProps(r){const u=r.utm||toUTM(r.lat,r.lon);return{
   especie:r.especie,familia:r.familia||'',cultivo_ref:r.cultivo||'',psc:!!r.psc,psua:!!r.psua,uicn:r.uicn||'',
-  certidumbre:r.certidumbre,fecha:r.fecha,localidad:r.localidad,
+  certidumbre:r.certidumbre,fecha:r.fecha,localidad:r.localidad,reserva_genetica:r.reserva||'',
   metodo_estimacion:r.metodo||'',transecto_area_m2:r.transecto_area_m2||'',transecto_n:r.transecto_n||'',
   unidad:r.unidad,abundancia:r.abundancia,cobertura:r.cobertura,fenologia:r.fenologia,
   habitat_eunis:r.habitat,sustrato:r.sustrato,pliego:r.pliego,observador:r.observador,
@@ -1779,18 +1848,18 @@ function geoProps(r){const u=r.utm||toUTM(r.lat,r.lon);return{
   malla_m:r.malla_m||'',cuadriculas_totales:r.cuadriculas_totales||'',cuadriculas_presencia:r.cuadriculas_presencia||'',frecuencia_ocupacion_pct:(r.frecuencia_ocupacion!=null?r.frecuencia_ocupacion:''),
   n_fotos:(r.fotos||[]).length};}
 $('#btnCsv').onclick=()=>{
-  const cols=['especie','familia','cultivo_ref','psc','psua','uicn','certidumbre','fecha','lat','lon','utm_huso','utm_x','utm_y','localidad','metodo_estimacion','transecto_area_m2','transecto_n','unidad','abundancia','cobertura','fenologia','habitat','sustrato','pliego','observador','notas','n_vertices_poligono','area_m2','malla_m','cuadriculas_totales','cuadriculas_presencia','frecuencia_ocupacion_pct'];
+  const cols=['especie','familia','cultivo_ref','psc','psua','uicn','certidumbre','fecha','lat','lon','utm_huso','utm_x','utm_y','localidad','reserva_genetica','metodo_estimacion','transecto_area_m2','transecto_n','unidad','abundancia','cobertura','fenologia','habitat','sustrato','pliego','observador','notas','n_vertices_poligono','area_m2','malla_m','cuadriculas_totales','cuadriculas_presencia','frecuencia_ocupacion_pct'];
   const rows=[cols.join(',')];
   records.forEach(r=>{const u=r.utm||toUTM(r.lat,r.lon);const a=r.poligono?polyAreaM2(r.poligono):'';
-    const vals=[r.especie,r.familia||'',r.cultivo||'',r.psc?'sí':'',r.psua?'sí':'',r.uicn||'',r.certidumbre,r.fecha,r.lat,r.lon,u.zone,u.x.toFixed(1),u.y.toFixed(1),r.localidad,r.metodo||'',r.transecto_area_m2||'',r.transecto_n||'',r.unidad,r.abundancia,r.cobertura,r.fenologia,r.habitat,r.sustrato,r.pliego,r.observador,r.notas,r.poligono?r.poligono.length:'',a===''?'':a.toFixed(0),r.malla_m||'',r.cuadriculas_totales||'',r.cuadriculas_presencia||'',(r.frecuencia_ocupacion!=null?r.frecuencia_ocupacion:'')];
+    const vals=[r.especie,r.familia||'',r.cultivo||'',r.psc?'sí':'',r.psua?'sí':'',r.uicn||'',r.certidumbre,r.fecha,r.lat,r.lon,u.zone,u.x.toFixed(1),u.y.toFixed(1),r.localidad,r.reserva||'',r.metodo||'',r.transecto_area_m2||'',r.transecto_n||'',r.unidad,r.abundancia,r.cobertura,r.fenologia,r.habitat,r.sustrato,r.pliego,r.observador,r.notas,r.poligono?r.poligono.length:'',a===''?'':a.toFixed(0),r.malla_m||'',r.cuadriculas_totales||'',r.cuadriculas_presencia||'',(r.frecuencia_ocupacion!=null?r.frecuencia_ocupacion:'')];
     rows.push(vals.map(v=>{v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(','));
   });
   dl('florcwr.csv','\ufeff'+rows.join('\n'),'text/csv');toast('CSV exportado');
 };
-$('#btnJson').onclick=()=>{dl('florcwr_backup.json',JSON.stringify({records,taxa,exported:new Date().toISOString()},null,1),'application/json');toast('Backup exportado')};
+$('#btnJson').onclick=()=>{dl('florcwr_backup.json',JSON.stringify({records,taxa,reservas,exported:new Date().toISOString()},null,1),'application/json');toast('Backup exportado')};
 $('#importJson').addEventListener('change',e=>{
   const f=e.target.files[0];if(!f)return;const r=new FileReader();
-  r.onload=()=>{try{const d=JSON.parse(r.result);if(Array.isArray(d.records)){records=d.records;saveAll();if(d.taxa){taxa=d.taxa;save(LS_TAX,taxa)}renderCount();renderList();toast('Importados '+d.records.length+' registros')}else toast('JSON no válido')}catch(x){toast('Error al leer JSON')}};
+  r.onload=()=>{try{const d=JSON.parse(r.result);if(Array.isArray(d.records)){records=d.records;saveAll();if(d.taxa){taxa=d.taxa;save(LS_TAX,taxa)}if(d.reservas&&typeof d.reservas==='object'){reservas=Object.assign(reservas,d.reservas);save(LS_RES,reservas);refreshReservaPicker()}renderCount();renderList();toast('Importados '+d.records.length+' registros')}else toast('JSON no válido')}catch(x){toast('Error al leer JSON')}};
   r.readAsText(f);e.target.value='';
 });
 
@@ -1827,9 +1896,44 @@ function updateTaxNote(){
 function renderCount(){$('#recCount').textContent=records.length+(records.length===1?' registro':' registros')}
 $('#btnWipe').onclick=()=>{if(confirm('¿Borrar TODOS los registros? Esta acción no se puede deshacer.')){records=[];saveAll();renderCount();renderList();toast('Registros borrados')}};
 
+/* ===== RESERVAS GENÉTICAS REUTILIZABLES ===== */
+function refreshReservaPicker(){
+  const sel=$('#f_reservaPick'), block=$('#reservaPickBlock');
+  const names=Object.keys(reservas).sort((a,b)=>a.localeCompare(b,'es'));
+  if(!names.length){ if(block)block.style.display='none'; return; }
+  block.style.display='';
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— elegir reserva guardada —</option>'+
+    names.map(n=>`<option value="${esc(n)}">${esc(n)} · ${reservas[n].poligono.length} vért</option>`).join('');
+  if(cur && reservas[cur])sel.value=cur;
+}
+function loadReserva(nombre){
+  const r=reservas[nombre]; if(!r)return;
+  $('#f_reserva').value=nombre;
+  currentPoly=r.poligono.slice(); currentPolyAcc=(r.acc||[]).slice();
+  initFormMap();
+  if(fmap){
+    drawnItems.clearLayers();
+    const ly=L.polygon(currentPoly,{color:'#b4541f',weight:2,fillOpacity:.15}); drawnItems.addLayer(ly);
+    fmap.fitBounds(ly.getBounds().pad(0.3));
+  }
+  // la malla/frecuencia es por población: se reinicia
+  presenceKeys.clear(); gridCells=[]; gridM=0;
+  if(gridLayer&&fmap){fmap.removeLayer(gridLayer);gridLayer=null}
+  document.querySelectorAll('#gridCfg button').forEach(x=>x.classList.remove('on'));
+  const g0=document.querySelector('#gridCfg button[data-m="0"]'); if(g0)g0.classList.add('on');
+  $('#btnGridPresence').disabled=true; $('#btnGridClear').disabled=true;
+  polyInfo();
+  const info=$('#reservaSaveInfo'); if(info){info.style.display='block';info.innerHTML=`Polígono de «<b>${esc(nombre)}</b>» cargado. La malla de frecuencia es propia de cada población: defínela abajo si procede.`;}
+  if($('#f_metodo').value==='Transecto')calcTransecto();
+  toast('Reserva cargada');
+}
+$('#btnLoadReserva').onclick=()=>{const n=$('#f_reservaPick').value;if(!n){toast('Elige una reserva');return}loadReserva(n)};
+$('#f_reserva').addEventListener('blur',()=>{ if(currentPoly&&currentPoly.length>=3)maybeSaveReserva(); });
+
 /* init */
 $('#f_fecha').value=new Date().toISOString().slice(0,10);
-refreshTaxStat();updateTaxNote();renderCount();renderList();
+refreshTaxStat();updateTaxNote();renderCount();renderList();refreshReservaPicker();
 setTimeout(()=>{initFormMap();[120,400,900].forEach(t=>setTimeout(()=>fmap&&fmap.invalidateSize(),t));},300);
 
 /* ===== PWA: registro del service worker con detección de actualización ===== */
